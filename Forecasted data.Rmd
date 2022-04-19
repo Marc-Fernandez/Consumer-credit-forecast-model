@@ -1,0 +1,243 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r include=FALSE}
+library(tseries)
+library(moments)
+library(forecast)
+library(stargazer)
+```
+
+```{r}
+rm(list = ls())
+setwd("/Users/marc/Desktop/Forecasting techniques")
+df <- read.csv("./TOTALSLAR.csv")
+```
+
+```{r}
+df$DATE <- as.Date(df$DATE, "%Y-%m-%d")
+
+in.sample <- df[1:644,]
+out.sample <- df[645:805,]
+
+N <- length(in.sample$TOTALSLAR)
+```
+
+```{r fig.height=5}
+par(mfrow = c(2,1), mar = c(3,3,4,1))
+acf(in.sample$TOTALSLAR, main = "ACF")
+pacf(in.sample$TOTALSLAR, main = "PACF")
+```
+
+```{r warning=FALSE}
+# Because the autocorrelations show so much dependence, we will evaluate different models to see how they perform
+
+tracking <- c()
+lb.tests <- c()
+LB.p.value <- c()
+residuals <- c()
+arma.models <- c()
+mse <- c()
+LL <- c()
+aic <- c()
+bic <- c()
+for (i.lag in 0:2){
+  for (ar.lag in 0:4){
+    for (ma.lag in 0:17){
+      
+      tracking <- c(tracking, paste("arima(", ar.lag, ",", i.lag, ",", ma.lag, ")", sep = ""))
+      arma.model <- arima(in.sample$TOTALSLAR, order = c(ar.lag, i.lag, ma.lag), method = "ML")
+      residuals <- arma.model[["residuals"]]
+      LB.p.value <- c(LB.p.value, Box.test(in.sample$TOTALSLAR - residuals, type = "Ljung-Box", lag = 22)[["p.value"]])
+      LL <- c(LL, arma.model$loglik)
+      
+      if (i.lag == 0) {
+        aic <- c(aic, (-2*arma.model$loglik+2*sum(ar.lag, ma.lag + 1))/N)
+        bic <- c(bic, (-2*arma.model$loglik+log(N)*sum(ar.lag, ma.lag + 1))/N)
+      } else {
+        aic <- c(aic, (-2*arma.model$loglik+2*sum(ar.lag, ma.lag))/N)
+        bic <- c(bic, (-2*arma.model$loglik+log(N)*sum(ar.lag, ma.lag))/N)
+      }
+      
+      mse <- c(mse, sqrt(mean(predict(arma.model, n.ahead = 10)$pred - out.sample$TOTALSLAR[1:10])**2))
+      
+    }
+  }
+}
+
+model.comparison <- cbind(tracking, "Ljung-Box 22 lags p.value" = LB.p.value, LL, aic, bic, "MSE of 10-step ahead dynamic forecast" = mse)
+```
+
+```{r}
+# The above code generates a table of the output sort, which helps sort the best lags for each arima model by their LL, AIC and BIC criteria
+stargazer(head(model.comparison[,1:5]), type = "text")
+```
+
+```{r}
+arima3.0.17 <- arima(in.sample$TOTALSLAR, order = c(3, 0, 17), method = "ML")
+arima4.0.7 <- arima(in.sample$TOTALSLAR, order = c(4, 0, 7), method = "ML")
+arima0.1.1 <- arima(in.sample$TOTALSLAR, order = c(0, 1, 1), method = "ML")
+arima0.1.0 <- arima(in.sample$TOTALSLAR, order = c(0, 1, 0), method = "ML")
+arima0.0.1 <- arima(in.sample$TOTALSLAR, order = c(0, 0, 1), method = "ML")
+```
+
+```{r}
+stargazer(arima0.1.1, 
+          arima3.0.17, 
+          arima4.0.7, 
+          type = "text",
+          column.labels = c("ARIMA(0,1,1)", "ARIMA(3,0,17)", "ARIMA(4,0,7)"), 
+          dep.var.labels = "Coefficients (se)", 
+          report = "vc*s", 
+          single.row = TRUE)
+```
+
+```{r fig.height=5}
+par(mfrow=c(2,1))
+
+plot(y = in.sample$TOTALSLAR, 
+     type = "l", 
+     lwd = 1.4, 
+     main = paste("ARIMA(3, 0, 17) | LL:", round(arima3.0.17[["loglik"]], 2)), 
+     xlab = "Date", 
+     ylab = "TOTALSLAR", 
+     x = in.sample$DATE)
+
+lines(y = (in.sample$TOTALSLAR - arima3.0.17[["residuals"]]), 
+      x = in.sample$DATE, 
+      type = "l", 
+      col = "red", 
+      lwd = 1.4)
+
+plot(arima3.0.17[["residuals"]], 
+     x = in.sample$DATE, 
+     col = "black", 
+     lwd = 1.4, 
+     main = "",
+       xlab = "Date", 
+       ylab = "TOTALSLAR")
+
+abline(0,0, lwd = 2)
+```
+
+```{r fig.height=5}
+par(mfrow=c(2,1))
+
+plot(y = in.sample$TOTALSLAR, 
+     type = "l", 
+     lwd = 1.4, 
+     main = paste("ARIMA(4, 0, 7) | LL:", round(arima4.0.7[["loglik"]], 2)), 
+     xlab = "Date", 
+     ylab = "TOTALSLAR", 
+     x = in.sample$DATE)
+
+lines(y = (in.sample$TOTALSLAR - arima4.0.7[["residuals"]]), 
+      x = in.sample$DATE, 
+      type = "l", 
+      col = "red", 
+      lwd = 1.4)
+
+plot(arima4.0.7[["residuals"]], 
+     x = in.sample$DATE, 
+     col = "black", 
+     lwd = 1.4, 
+     main = "",
+     xlab = "Date", 
+     ylab = "TOTALSLAR")
+
+abline(0,0, lwd = 2)
+```
+
+```{r fig.height=5}
+par(mfrow=c(2,1))
+
+plot(y = in.sample$TOTALSLAR, 
+     type = "l", 
+     lwd = 1.4, 
+     main = paste("ARIMA(0, 1, 1) | LL:", round(arima0.1.1[["loglik"]], 2)), 
+     xlab = "Date", 
+     ylab = "TOTALSLAR", 
+     x = in.sample$DATE)
+
+lines(y = (in.sample$TOTALSLAR - arima0.1.1[["residuals"]]), 
+      x = in.sample$DATE, 
+      type = "l", 
+      col = "red", 
+      lwd = 1.4)
+
+plot(arima0.1.1[["residuals"]], 
+     x = in.sample$DATE, 
+     col = "black", 
+     lwd = 1.4, 
+     main = "",
+     xlab = "Date",
+     ylab = "TOTALSLAR")
+
+abline(0,0, lwd = 2)
+```
+
+```{r fig.height=5}
+par(mfrow=c(2,1))
+
+plot(y = in.sample$TOTALSLAR, 
+     type = "l", 
+     lwd = 1.4, 
+     main = paste("ARIMA(0, 1, 0) | LL:", round(arima0.1.0[["loglik"]], 2)), 
+     xlab = "Date", 
+     ylab = "TOTALSLAR", 
+     x = in.sample$DATE)
+
+lines(y = (in.sample$TOTALSLAR - arima0.1.0[["residuals"]]), 
+      x = in.sample$DATE, 
+      type = "l", 
+      col = "red", 
+      lwd = 1.4)
+
+plot(arima0.1.0[["residuals"]], 
+     x = in.sample$DATE, 
+     col = "black", 
+     lwd = 1.4, 
+     xlab = "Date", 
+     ylab = "TOTALSLAR")
+
+abline(0,0, lwd = 2)
+```
+
+```{r}
+integrated <- diff(in.sample[,2])
+  
+plot(integrated, type = "l", col = "black", lwd = 1, xlab = "Date")
+
+par(mfrow = c(2,1))
+acf(integrated, main = "ACF of the integrated data", lwd = 3, col = "tomato")
+pacf(integrated, main = "PACF of the integrated data", lwd = 3, col = "tomato")
+```
+
+```{r fig.height=5}
+par(mfrow=c(2,1), mar = c(3,3,6,3))
+acf((arima0.1.0[["residuals"]]), lwd = 3, col = "tomato")
+pacf((arima0.1.0[["residuals"]]), lwd = 3, col = "tomato", main = "")
+
+par(mfrow=c(2,1))
+acf((arima3.0.17[["residuals"]]), lwd = 3, col = "tomato")
+pacf((arima3.0.17[["residuals"]]), lwd = 3, col = "tomato", main = "")
+
+par(mfrow=c(2,1))
+acf((arima4.0.7[["residuals"]]), lwd = 3, col = "tomato")
+pacf((arima4.0.7[["residuals"]]), lwd = 3, col = "tomato", main = "")
+
+par(mfrow=c(2,1))
+acf((arima0.1.1[["residuals"]]), lwd = 3, col = "tomato")
+pacf((arima0.1.1[["residuals"]]), lwd = 3, col = "tomato", main = "")
+```
+
+```{r}
+Box.test(arima0.1.1[["residuals"]], type = "Ljung-Box", lag = 25)
+Box.test(arima3.0.17[["residuals"]], type = "Ljung-Box", lag = 25)
+Box.test(arima4.0.7[["residuals"]], type = "Ljung-Box", lag = 25)
+Box.test(arima0.1.0[["residuals"]], type = "Ljung-Box", lag = 25)
+```
